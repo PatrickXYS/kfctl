@@ -28,11 +28,11 @@ def test_build_kfctl_go(record_xml_attribute, app_name, app_path, project, use_b
   util.set_pytest_junit(record_xml_attribute, "test_build_kfctl_go")
 
   # Need to activate account for scopes.
-  if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-    util.run([
-        "gcloud", "auth", "activate-service-account",
-        "--key-file=" + os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
-    ])
+  # if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+  #   util.run([
+  #       "gcloud", "auth", "activate-service-account",
+  #       "--key-file=" + os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
+  #   ])
 
   # TODO(yanniszark): split this into a separate workflow step
   if cluster_creation_script:

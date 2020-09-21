@@ -74,7 +74,7 @@ DEFAULT_REPOS = [
 class Builder(object):
   def __init__(self, name=None, namespace=None,
                config_path=("https://raw.githubusercontent.com/kubeflow"
-                            "/manifests/master/kfdef/kfctl_gcp_iap.yaml"),
+                            "/manifests/master/kfdef/kfctl_aws.yaml"),
                bucket=None,
                test_endpoint=False,
                use_basic_auth=False,
@@ -113,7 +113,7 @@ class Builder(object):
     self.mount_path = "/mnt/" + "test-data-volume"
     # test_dir is the root directory for all data for a particular test run.
     self.test_dir = self.mount_path + "/" + self.name
-    # output_dir is the directory to sync to GCS to contain the output for this
+    # output_dir is the directory to sync to S3 to contain the output for this
     # job.
     self.output_dir = self.test_dir + "/output"
 
@@ -126,7 +126,7 @@ class Builder(object):
     # source directory where all repos should be checked out
     self.src_root_dir = self.test_dir + "/src"
     # The directory containing the kubeflow/kfctl repo
-    self.src_dir = self.src_root_dir + "/kubeflow/kfctl"
+    self.src_dir = self.src_root_dir + "/PatrickXYS/kfctl"
     self.kubeflow_dir = self.src_root_dir + "/kubeflow/kubeflow"
 
     # Directory in kubeflow/kfctl containing the pytest files.
@@ -183,7 +183,7 @@ class Builder(object):
       self.test_target_name = self.config_name
 
     # app_name is the name of the Kubeflow deployment.
-    # This needs to be unique per run since we name GCP resources with it.
+    # This needs to be unique per run since we name AWS resources with it.
     self.app_name = kf_app_name
     if not self.app_name:
       self.app_name = "kfctl-" +  self.uuid
@@ -245,12 +245,6 @@ class Builder(object):
         "ttlSecondsAfterFinished": 7 * 24 * 60 * 60,
         "volumes": [
           {
-            "name": "gcp-credentials",
-            "secret": {
-              "secretName": "kubeflow-testing-credentials",
-            },
-          },
-          {
             "name": DATA_VOLUME,
             "persistentVolumeClaim": {
               "claimName": NFS_VOLUME_CLAIM,
@@ -290,19 +284,47 @@ class Builder(object):
     task_template = {'activeDeadlineSeconds': 3000,
      'container': {'command': [],
       'env': [
-        {"name": "GOOGLE_APPLICATION_CREDENTIALS",
-         "value": "/secret/gcp-credentials/key.json"},
+        {
+          "name": "AWS_ACCESS_KEY_ID",
+          "valueFrom": {
+            "secretKeyRef": {
+              "name": "aws-credentials",
+              "key": "AWS_ACCESS_KEY_ID",
+            },
+          },
+        },
+        {
+          "name": "AWS_SECRET_ACCESS_KEY",
+          "valueFrom": {
+            "secretKeyRef": {
+              "name": "aws-credentials",
+              "key": "AWS_SECRET_ACCESS_KEY",
+            },
+          },
+        },
+        {
+          "name": "AWS_DEFAULT_REGION",
+          "value": "us-west-2",
+        },
+        {
+          "name": "GITHUB_TOKEN",
+          "valueFrom": {
+            "secretKeyRef": {
+              "name": "github-token",
+              "key": "github_token",
+            },
+          },
+        },
         {"name": "TEST_TARGET_NAME",
          "value": self.test_target_name},
        ],
-      'image': 'gcr.io/kubeflow-ci/test-worker:latest',
+      'image': '527798164940.dkr.ecr.us-west-2.amazonaws.com/aws-kubeflow-ci/test-worker:latest',
       'imagePullPolicy': 'Always',
       'name': '',
-      'resources': {'limits': {'cpu': '4', 'memory': '4Gi'},
-       'requests': {'cpu': '1', 'memory': '1536Mi'}},
+      # 'resources': {'limits': {'cpu': '4', 'memory': '4Gi'},
+      #  'requests': {'cpu': '1', 'memory': '1536Mi'}},
       'volumeMounts': [{'mountPath': '/mnt/test-data-volume',
-        'name': 'kubeflow-test-volume'},
-       {'mountPath': '/secret/gcp-credentials', 'name': 'gcp-credentials'}]},
+        'name': 'kubeflow-test-volume'}]},
      'metadata': {'labels': {
        'workflow_template': TEMPLATE_LABEL}},
      'outputs': {}}
@@ -315,8 +337,6 @@ class Builder(object):
                           self.tf_operator_py])},
       {'name': 'GOPATH',
         'value': self.go_path},
-      {'name': 'KUBECONFIG',
-       'value': os.path.join(self.test_dir, 'kfctl_test/.kube/kubeconfig')},
     ]
 
     task_template["container"]["env"].extend(common_env)
@@ -516,7 +536,7 @@ class Builder(object):
     self.workflow = self._build_workflow()
     task_template = self._build_task_template()
     py3_template = argo_build_util.deep_copy(task_template)
-    py3_template["container"]["image"] = "gcr.io/kubeflow-ci/test-worker-py3:e9afed1-dirty"
+    py3_template["container"]["image"] = "527798164940.dkr.ecr.us-west-2.amazonaws.com/aws-kubeflow-ci/test-worker:latest"
 
     #**************************************************************************
     # Checkout

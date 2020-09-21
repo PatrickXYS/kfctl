@@ -125,7 +125,7 @@ local dagTemplates = [
     template: buildTemplate("create-pr-symlink", [
       "python",
       "-m",
-      "kubeflow.testing.prow_artifacts",
+      "kubeflow.testing.cloudprovider.aws.prow_artifacts",
       "--artifacts_dir=" + outputDir,
       "create_pr_symlink_s3",
       "--bucket=" + bucket,
@@ -155,7 +155,7 @@ local exitTemplates = [
     template: buildTemplate("copy-artifacts", [
       "python",
       "-m",
-      "kubeflow.testing.prow_artifacts",
+      "kubeflow.testing.cloudprovider.aws.prow_artifacts",
       "--artifacts_dir=" + outputDir,
       "copy_artifacts_to_s3",
       "--bucket=" + bucket,
