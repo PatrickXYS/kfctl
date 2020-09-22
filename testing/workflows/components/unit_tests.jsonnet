@@ -238,12 +238,6 @@ local workflow = {
         },
       },
       {
-        name: "gcp-credentials",
-        secret: {
-          secretName: "kubeflow-testing-credentials",
-        },
-      },
-      {
         name: dataVolume,
         persistentVolumeClaim: {
           claimName: nfsVolumeClaim,
