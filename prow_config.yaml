@@ -6,41 +6,37 @@ python_paths:
   - kubeflow/testing/py
   - PatrickXYS/kfctl/py
 workflows:
-  - app_dir: PatrickXYS/kfctl/testing/workflows
-    component: unit_tests
-    name: unittests
-    params:
-      workflowName: unittest
-    job_types:
-      - presubmit
-      - postsubmit
-      - periodic
-    include_dirs:
-      - config/*
-      - cmd/*
-      - pkg/*
-      - kustomize-fns/*
-      - testing/*
-      - py/*
-    
-  # - py_func: kubeflow.kfctl.testing.ci.kfctl_e2e_workflow.create_workflow
-  #   name: kfctl-aws-e2e
+  # - app_dir: PatrickXYS/kfctl/testing/workflows
+  #   component: unit_tests
+  #   name: unittests
+  #   params:
+  #     workflowName: unittest
   #   job_types:
   #     - presubmit
+  #     - postsubmit
+  #     - periodic
   #   include_dirs:
   #     - config/*
   #     - cmd/*
   #     - pkg/*
+  #     - kustomize-fns/*
   #     - testing/*
   #     - py/*
-  #   kwargs:
-  #     use_basic_auth: false
-  #     # Run build and then apply rather than just apply
-  #     build_and_apply: true
-  #     # test_endpoint flag is actually deprecated; we use pytest annotations to skip on
-  #     # presubmit.
-  #     test_endpoint: true
-  #     config_path: https://raw.githubusercontent.com/kubeflow/manifests/master/kfdef/kfctl_aws.v1.1.0.yaml
+    
+  - py_func: kubeflow.kfctl.testing.ci.kfctl_e2e_workflow.create_workflow
+    name: kfctl-aws-e2e
+    job_types:
+      - presubmit
+    include_dirs:
+      - config/*
+      - cmd/*
+      - pkg/*
+      - testing/*
+      - py/*
+    kwargs:
+      # Run build and then apply rather than just apply
+      build_and_apply: false
+      config_path: https://raw.githubusercontent.com/kubeflow/manifests/master/kfdef/kfctl_aws.v1.1.0.yaml
 
   # #****************************************************************************************************
   # # Per https://github.com/kubeflow/kfctl/issues/57 the following tests should not be blocking

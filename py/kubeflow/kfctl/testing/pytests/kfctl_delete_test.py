@@ -43,14 +43,10 @@ def get_endpoints_list(project):
 # it as expected to fail.
 @pytest.mark.xfail
 def test_kfctl_delete(record_xml_attribute, kfctl_path, app_path, project,
-                      cluster_deletion_script):
+                      cluster_deletion_script, cluster_name):
   util.set_pytest_junit(record_xml_attribute, "test_kfctl_delete")
-
-  # TODO(yanniszark): split this into a separate workflow step
-  if cluster_deletion_script:
-    logging.info("cluster_deletion_script specified: %s", cluster_deletion_script)
-    util.run(["/bin/bash", "-c", cluster_deletion_script])
-    return
+  
+  # TODO(PatrickXYS): do we need to load kubeconfig again?
 
   if not kfctl_path:
     raise ValueError("kfctl_path is required")
@@ -63,40 +59,24 @@ def test_kfctl_delete(record_xml_attribute, kfctl_path, app_path, project,
 
   kfdef_path = os.path.join(app_path, "tmp.yaml")
   logging.info("Using kfdef file path %s", kfdef_path)
-  kfdef = {}
-  with open(kfdef_path) as f:
-    kfdef = yaml.load(f)
-  for plugin in kfdef.get("spec", {}).get("plugins", []):
-    if plugin.get("kind", "") == "KfGcpPlugin":
-      if not "spec" in plugin:
-        raise ValueError("Invalid GCP plugin spec %s", str(plugin))
-      plugin["spec"]["deleteStorage"] = True
-  with open(kfdef_path, "w") as f:
-    yaml.dump(kfdef, f)
 
-  # We see failures because delete will try to update the IAM policy which only allows
-  # 1 update at a time. To deal with this we do retries.
+  # We see failures because delete operation will delete cert-manager and
+  # kfserving, and encounter timeout. To deal with this we do retries.
   # This has a potential downside of hiding errors that are fixed by retrying.
   @retry(stop_max_delay=60*3*1000)
   def run_delete():
-    util.run([kfctl_path, "delete", "-V", "-f", os.path.join(app_path, "tmp.yaml")],
+    util.run([kfctl_path, "delete", "-V", "-f", kfdef_path],
              cwd=app_path)
 
   run_delete()
 
-  # Use services.list instead of services.get because error returned is not
-  # 404, it's 403 which is confusing.
-  name = os.path.basename(app_path)
-  endpoint_name = "{deployment}.endpoints.{project}.cloud.goog".format(
-      deployment=name,
-      project=project)
-  logging.info("Verify endpoint service is deleted: " + endpoint_name)
-  if endpoint_name in get_endpoints_list(project):
-    msg = "Endpoint is not deleted: " + endpoint_name
-    logging.error(msg)
-    raise AssertionError(msg)
-  else:
-    logging.info("Verified endpoint service is deleted.")
+  # TODO(yanniszark): split this into a separate workflow step
+  if cluster_deletion_script:
+    logging.info("cluster_deletion_script specified: %s", cluster_deletion_script)
+    util.run(["/bin/bash", "export", "CLUSTER_NAME=", cluster_name])
+    util.run(["/bin/bash", "-c", cluster_deletion_script])
+    return
+
 
 if __name__ == "__main__":
   logging.basicConfig(level=logging.INFO,

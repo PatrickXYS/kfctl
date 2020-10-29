@@ -48,7 +48,7 @@ def test_kfctl_delete_wrong_cluster(record_xml_attribute, kfctl_path, app_path, 
       kfdef["metadata"]["clusterName"] = "dummy"
       with open(kfdef_path, "w") as f:
         yaml.dump(kfdef, f)
-      util.run([kfctl_path, "delete", "--delete_storage", "-V", "-f", kfdef_path],
+      util.run([kfctl_path, "delete", "-V", "-f", kfdef_path],
                cwd=app_path)
     except subprocess.CalledProcessError as e:
       if e.output.find("cluster name doesn't match") != -1:

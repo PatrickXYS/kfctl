@@ -14,6 +14,8 @@ import pytest
 
 from kubeflow.testing import util
 from kubeflow.kfctl.testing.util import deploy_utils
+from kubeflow.testing.cloudprovider.aws import util as aws_util
+from kubeflow.testing.cloudprovider.aws import prow_artifacts as aws_prow_artifacts
 
 def set_logging():
   logging.basicConfig(level=logging.INFO,
@@ -37,13 +39,15 @@ def get_platform_app_name(app_path):
     for plugin in kfdef["spec"].get("plugins", []):
       if plugin.get("kind", "") == "KfGcpPlugin":
         platform = "gcp"
+      elif plugin.get("kind", "") == "KfAwsPlugin":
+        platform = "aws"
       elif plugin.get("kind", "") == "KfExistingArriktoPlugin":
         platform = "existing_arrikto"
   else:
     raise RuntimeError("Unknown version: " + apiVersion[-1])
   return platform, app_name
 
-def check_deployments_ready(record_xml_attribute, namespace, name, deployments):
+def check_deployments_ready(record_xml_attribute, namespace, name, deployments, cluster_name):
   """Test that Kubeflow deployments are successfully deployed.
 
   Args:
@@ -53,19 +57,34 @@ def check_deployments_ready(record_xml_attribute, namespace, name, deployments):
   util.set_pytest_junit(record_xml_attribute, name)
 
   # Need to activate account for scopes.
-  if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-    util.run(["gcloud", "auth", "activate-service-account",
-              "--key-file=" + os.environ["GOOGLE_APPLICATION_CREDENTIALS"]])
+  # if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+  #   util.run(["gcloud", "auth", "activate-service-account",
+  #             "--key-file=" + os.environ["GOOGLE_APPLICATION_CREDENTIALS"]])
+  
+  # Authenticate AWS Credentials
+  if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
+    logging.info("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set;")
+  else:
+    logging.info("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are not set.")
+  util.run(["aws", "eks", "update-kubeconfig", "--name=" + cluster_name])
 
   api_client = deploy_utils.create_k8s_client()
 
-  util.load_kube_config()
+  aws_util.load_kube_config()
 
   for deployment_name in deployments:
     logging.info("Verifying that deployment %s started...", deployment_name)
     util.wait_for_deployment(api_client, namespace, deployment_name, 10)
 
-def test_katib_is_ready(record_xml_attribute, namespace):
+def test_admission_is_ready(record_xml_attribute, namespace, cluster_name):
+  deployment_names = [
+    "admission-webhook-deployment"
+  ]
+  check_deployments_ready(record_xml_attribute, namespace,
+                          "test_admission_is_ready", deployment_names,
+                          cluster_name)
+
+def test_katib_is_ready(record_xml_attribute, namespace, cluster_name):
   deployment_names = [
     "katib-controller",
     "katib-mysql",
@@ -73,58 +92,104 @@ def test_katib_is_ready(record_xml_attribute, namespace):
     "katib-ui",
   ]
   check_deployments_ready(record_xml_attribute, namespace,
-                          "test_katib_is_ready", deployment_names)
+                          "test_katib_is_ready", deployment_names,
+                          cluster_name)
 
-def test_metadata_is_ready(record_xml_attribute, namespace):
+def test_metadata_is_ready(record_xml_attribute, namespace, cluster_name):
   deployment_names = [
     "metadata-deployment",
     "metadata-grpc-deployment",
     "metadata-db",
     "metadata-ui",
+    "metadata-envoy-deployment",
+    "metadata-writer",
   ]
   check_deployments_ready(record_xml_attribute, namespace,
-                          "test_metadata_is_ready", deployment_names)
+                          "test_metadata_is_ready", deployment_names,
+                          cluster_name)
 
-def test_pipeline_is_ready(record_xml_attribute, namespace):
+def test_pipeline_is_ready(record_xml_attribute, namespace, cluster_name):
   deployment_names = [
     "argo-ui",
+    "cache-deployer-deployment",
+    "cache-server",
+    "kubeflow-pipelines-profile-controller",
     "minio",
     "ml-pipeline",
     "ml-pipeline-persistenceagent",
     "ml-pipeline-scheduledworkflow",
     "ml-pipeline-ui",
-    "ml-pipeline-viewer-controller-deployment",
+    "ml-pipeline-viewer-crd",
+    "ml-pipeline-visualizationserver",
     "mysql",
   ]
   check_deployments_ready(record_xml_attribute, namespace,
-                          "test_pipeline_is_ready", deployment_names)
+                          "test_pipeline_is_ready", deployment_names,
+                          cluster_name)
 
-def test_notebook_is_ready(record_xml_attribute, namespace):
+def test_notebook_is_ready(record_xml_attribute, namespace, cluster_name):
   deployment_names = [
     "jupyter-web-app-deployment",
     "notebook-controller-deployment",
   ]
   check_deployments_ready(record_xml_attribute, namespace,
-                          "test_notebook_is_ready", deployment_names)
+                          "test_notebook_is_ready", deployment_names,
+                          cluster_name)
 
-def test_centraldashboard_is_ready(record_xml_attribute, namespace):
+def test_centraldashboard_is_ready(record_xml_attribute, namespace, cluster_name):
   check_deployments_ready(record_xml_attribute, namespace,
-                          "test_centraldashboard_is_ready",["centraldashboard"])
+                          "test_centraldashboard_is_ready",["centraldashboard"],
+                          cluster_name)
 
-def test_profiles_is_ready(record_xml_attribute, namespace):
+def test_profiles_is_ready(record_xml_attribute, namespace, cluster_name):
   check_deployments_ready(record_xml_attribute, namespace,
-                          "test_profile_is_ready",["profiles-deployment"])
+                          "test_profile_is_ready",["profiles-deployment"],
+                          cluster_name)
 
-def test_pytorch_is_ready(record_xml_attribute, namespace):
+def test_seldon_is_ready(record_xml_attribute, namespace, cluster_name):
+  deployment_names = [
+    "seldon-controller-manager"
+  ]
   check_deployments_ready(record_xml_attribute, namespace,
-                          "test_pytorch_is_ready",["pytorch-operator"])
+                          "test_seldon_is_ready", deployment_names,
+                          cluster_name)
 
-def test_tf_job_is_ready(record_xml_attribute, namespace):
+def test_spark_is_ready(record_xml_attribute, namespace, cluster_name):
+  deployment_names = [
+    "spark-operatorsparkoperator"
+  ]
   check_deployments_ready(record_xml_attribute, namespace,
-                          "test_tf_job_is_ready",["tf-job-operator"])
+                          "test_spark_is_ready", deployment_names,
+                          cluster_name)
+
+def test_tensorboard_are_ready(record_xml_attribute, namespace, cluster_name):
+  deployment_names = [
+    "tensorboard"
+  ]
+
+  check_deployments_ready(record_xml_attribute, namespace,
+                        "test_tensorboard_is_ready",deployment_names,
+                        cluster_name)
+
+def test_training_operators_are_ready(record_xml_attribute, namespace, cluster_name):
+  deployment_names = [
+    "mpi-operator",
+    "mxnet-operator",
+    "pytorch-operator",
+    "tf-job-operator",
+  ]
+
+  check_deployments_ready(record_xml_attribute, namespace,
+                        "test_training_is_ready",deployment_names,
+                        cluster_name)
+
+def test_workflow_controller_is_ready(record_xml_attribute, namespace, cluster_name):
+  check_deployments_ready(record_xml_attribute, namespace,
+                          "test_workflow_controller_is_ready",["workflow-controller"],
+                          cluster_name)
 
 def test_kf_is_ready(record_xml_attribute, namespace, use_basic_auth, use_istio,
-                     app_path):
+                     app_path, cluster_name):
   """Test that Kubeflow was successfully deployed.
 
   Args:
@@ -134,34 +199,37 @@ def test_kf_is_ready(record_xml_attribute, namespace, use_basic_auth, use_istio,
   util.set_pytest_junit(record_xml_attribute, "test_kf_is_ready")
 
   # Need to activate account for scopes.
-  if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-    util.run(["gcloud", "auth", "activate-service-account",
-              "--key-file=" + os.environ["GOOGLE_APPLICATION_CREDENTIALS"]])
+  # if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+  #   util.run(["gcloud", "auth", "activate-service-account",
+  #             "--key-file=" + os.environ["GOOGLE_APPLICATION_CREDENTIALS"]])
+
+  # Authenticate AWS Credentials
+  if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
+    logging.info("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set;")
+  else:
+    logging.info("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are not set.")
+  util.run(["aws", "eks", "update-kubeconfig", "--name=" + cluster_name])
 
   api_client = deploy_utils.create_k8s_client()
 
-  util.load_kube_config()
+  aws_util.load_kube_config()
 
   # Verify that components are actually deployed.
-  # TODO(jlewi): We need to parameterize this list based on whether
-  # we are using IAP or basic auth.
-  # TODO(yanniszark): This list is incomplete and missing a lot of components.
-  deployment_names = [
-      "workflow-controller",
-  ]
+  deployment_names = []
 
   stateful_set_names = []
 
   platform, _ = get_platform_app_name(app_path)
 
   ingress_related_deployments = [
-    "istio-egressgateway",
+    "cluster-local-gateway",
+    "istio-citadel",
     "istio-ingressgateway",
+    "istio-galley ",
     "istio-pilot",
     "istio-policy",
     "istio-sidecar-injector",
     "istio-telemetry",
-    "istio-tracing",
     "prometheus",
   ]
   ingress_related_stateful_sets = []
@@ -170,7 +238,10 @@ def test_kf_is_ready(record_xml_attribute, namespace, use_basic_auth, use_istio,
   knative_related_deployments = [
           "activator",
           "autoscaler",
+          "autoscaler-hpa",
           "controller",
+          "networking-istio",
+          "webhook",
   ]
 
   if platform == "gcp":
@@ -186,14 +257,16 @@ def test_kf_is_ready(record_xml_attribute, namespace, use_basic_auth, use_istio,
     deployment_names.extend(["dex"])
     ingress_related_deployments.extend(["authservice"])
     knative_related_deployments = []
-
+  elif platform == "aws":
+    # TODO(PatrickXYS): Extend List with AWS Deployment
+    deployment_names.extend(["alb-ingress-controller"])
 
   # TODO(jlewi): Might want to parallelize this.
   for deployment_name in deployment_names:
     logging.info("Verifying that deployment %s started...", deployment_name)
     util.wait_for_deployment(api_client, namespace, deployment_name, 10)
 
-  ingress_namespace = "istio-system" if use_istio else namespace
+  ingress_namespace = "istio-system"
   for deployment_name in ingress_related_deployments:
     logging.info("Verifying that deployment %s started...", deployment_name)
     util.wait_for_deployment(api_client, ingress_namespace, deployment_name, 10)
@@ -211,56 +284,34 @@ def test_kf_is_ready(record_xml_attribute, namespace, use_basic_auth, use_istio,
       util.run(["kubectl", "-n", ss_namespace, "describe", "statefulsets", name])
       raise
 
-  # TODO(jlewi): We should verify that the ingress is created and healthy.
+  ingress_names = ["istio-ingress"]
+  # Check if ALB Ingress is Ready and Healthy
+  if platform == "aws":
+    for ingress_name in ingress_names:
+      logging.info("Verifying that ingress %s started...", ingress_name)
+      util.wait_for_ingress(api_client, ingress_namespace, ingress_name, 10)
 
   for deployment_name in knative_related_deployments:
     logging.info("Verifying that deployment %s started...", deployment_name)
     util.wait_for_deployment(api_client, knative_namespace, deployment_name, 10)
-
-
-def test_gcp_access(record_xml_attribute, namespace, app_path, project):
-  """Test that Kubeflow gcp was configured with workload_identity and GCP service account credentails.
-
-  Args:
-    namespace: The namespace Kubeflow is deployed to.
-  """
-  set_logging()
-  util.set_pytest_junit(record_xml_attribute, "test_gcp_access")
-
-  # Need to activate account for scopes.
-  if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-    util.run(["gcloud", "auth", "activate-service-account",
-              "--key-file=" + os.environ["GOOGLE_APPLICATION_CREDENTIALS"]])
-
-  api_client = deploy_utils.create_k8s_client()
-
-  platform, app_name = get_platform_app_name(app_path)
-  if platform == "gcp":
-    # check secret
-    util.check_secret(api_client, namespace, "user-gcp-sa")
-
-    cred = GoogleCredentials.get_application_default()
-    # Create the Cloud IAM service object
-    service = googleapiclient.discovery.build('iam', 'v1', credentials=cred)
-
-    userSa = 'projects/%s/serviceAccounts/%s-user@%s.iam.gserviceaccount.com' % (project, app_name, project)
-    adminSa = 'serviceAccount:%s-admin@%s.iam.gserviceaccount.com' % (app_name, project)
-
-    request = service.projects().serviceAccounts().getIamPolicy(resource=userSa)
-    response = request.execute()
-    roleToMembers = {}
-    for binding in response['bindings']:
-      roleToMembers[binding['role']] = set(binding['members'])
-
-    if 'roles/owner' not in roleToMembers:
-      raise Exception("roles/owner missing in iam-policy of %s" % userSa)
-
-    if adminSa not in roleToMembers['roles/owner']:
-      raise Exception("Admin %v should be owner of user %s" % (adminSa, userSa))
-
-    workloadIdentityRole = 'roles/iam.workloadIdentityUser'
-    if workloadIdentityRole not in roleToMembers:
-      raise Exception("roles/iam.workloadIdentityUser missing in iam-policy of %s" % userSa)
+  
+  # Check if Dex is Ready and Healthy
+  dex_deployment_names = ["dex"]
+  dex_namespace = "auth"
+  for dex_deployment_name in dex_deployment_names:
+    logging.info("Verifying that deployment %s started...", dex_deployment_name)
+    util.wait_for_deployment(api_client, dex_namespace, dex_deployment_name, 10)
+  
+  # Check if Cert-Manager is Ready and Healthy
+  cert_manager_deployment_names = [
+    "cert-manager",
+    "cert-manager-cainjector",
+    "cert-manager-webhook",
+  ]
+  cert_manager_namespace = "cert-manager"
+  for cert_manager_deployment_name in cert_manager_deployment_names:
+    logging.info("Verifying that deployment %s started...", cert_manager_deployment_name)
+    util.wait_for_deployment(api_client, cert_manager_namespace, cert_manager_deployment_name, 10)
 
 
 if __name__ == "__main__":
