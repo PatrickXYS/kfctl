@@ -2,41 +2,13 @@
 
 We use this in order to generate a junit_xml file.
 """
-import datetime
 import logging
 import os
-import subprocess
-import tempfile
-import uuid
 from retrying import retry
-import yaml
-
 import pytest
-
 from kubeflow.testing import util
-from googleapiclient import discovery
-from oauth2client.client import GoogleCredentials
+from kubeflow.kfctl.testing.util import aws_util as kfctl_aws_util
 
-# TODO(gabrielwen): Move this to a separate test "kfctl_go_check_post_delete"
-def get_endpoints_list(project):
-  cred = GoogleCredentials.get_application_default()
-  services_mgt = discovery.build('servicemanagement', 'v1', credentials=cred, cache_discovery=False)
-  services = services_mgt.services()
-  next_page_token = None
-  endpoints = []
-
-  while True:
-    results = services.list(producerProjectId=project,
-                            pageToken=next_page_token).execute()
-
-    for s in results.get("services", {}):
-      name = s.get("serviceName", "")
-      endpoints.append(name)
-    if not "nextPageToken" in results:
-      break
-    next_page_token = results["nextPageToken"]
-
-  return endpoints
 
 # TODO(https://github.com/kubeflow/kfctl/issues/56): test_kfctl_delete is flaky
 # and more importantly failures block upload of GCS artifacts so for now we mark
@@ -60,6 +32,8 @@ def test_kfctl_delete(record_xml_attribute, kfctl_path, app_path, project,
   kfdef_path = os.path.join(app_path, "tmp.yaml")
   logging.info("Using kfdef file path %s", kfdef_path)
 
+  kfctl_aws_util.aws_auth_load_kubeconfig(cluster_name)
+
   # We see failures because delete operation will delete cert-manager and
   # kfserving, and encounter timeout. To deal with this we do retries.
   # This has a potential downside of hiding errors that are fixed by retrying.
@@ -69,13 +43,6 @@ def test_kfctl_delete(record_xml_attribute, kfctl_path, app_path, project,
              cwd=app_path)
 
   run_delete()
-
-  # TODO(yanniszark): split this into a separate workflow step
-  if cluster_deletion_script:
-    logging.info("cluster_deletion_script specified: %s", cluster_deletion_script)
-    util.run(["/bin/bash", "export", "CLUSTER_NAME=", cluster_name])
-    util.run(["/bin/bash", "-c", cluster_deletion_script])
-    return
 
 
 if __name__ == "__main__":

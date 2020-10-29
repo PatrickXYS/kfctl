@@ -1,14 +1,13 @@
 import logging
 import pytest
-
-from kubeflow.kfctl.testing.util import kfctl_go_test_utils as kfctl_util
+import os
 from kubeflow.testing import util
 
 
-def test_build_kfctl_go(record_xml_attribute, app_name, app_path, project, use_basic_auth,
+def test_create_cluster(record_xml_attribute, app_name, app_path, project, use_basic_auth,
                         use_istio, config_path, build_and_apply, kfctl_repo_path,
                         cluster_name, cluster_creation_script, self_signed_cert, values):
-  """Test building and deploying Kubeflow.
+  """Test Create Cluster For E2E Test.
 
   Args:
     app_name: kubeflow deployment name.
@@ -24,9 +23,7 @@ def test_build_kfctl_go(record_xml_attribute, app_name, app_path, project, use_b
     self_signed_cert: whether to use self-signed cert for ingress.
     values: Comma separated list of variables to substitute into config_path
   """
-  util.set_pytest_junit(record_xml_attribute, "test_build_kfctl_go")
-
-  logging.info("using kfctl repo: %s" % kfctl_repo_path)
+  util.set_pytest_junit(record_xml_attribute, "test_create_cluster")
 
   if values:
     pairs = values.split(",")
@@ -35,10 +32,10 @@ def test_build_kfctl_go(record_xml_attribute, app_name, app_path, project, use_b
       k, v = p.split("=")
       path_vars[k] = v
 
-    config_path = config_path.format(**path_vars)
-    logging.info("config_path after substitution: %s", config_path)
-
-  kfctl_path = kfctl_util.build_kfctl_go(kfctl_repo_path)
+  # Create EKS Cluster
+  logging.info("Creating EKS Cluster")
+  os.environ["CLUSTER_NAME"] = cluster_name
+  util.run(["/bin/bash", "-c", cluster_creation_script])
 
 
 if __name__ == "__main__":

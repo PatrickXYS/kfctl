@@ -10,6 +10,10 @@ def pytest_addoption(parser):
       help="Name of the KF application")
 
   parser.addoption(
+      "--cluster_name", action="store", default="",
+      help="Name of ephemeral EKS cluster for e2e test.")
+
+  parser.addoption(
       "--kfctl_path", action="store", default="",
       help="Path to kfctl.")
 
@@ -108,6 +112,10 @@ def cluster_creation_script(request):
 @pytest.fixture
 def cluster_deletion_script(request):
   return request.config.getoption("--cluster_deletion_script")
+
+@pytest.fixture
+def cluster_name(request):
+  return request.config.getoption("--cluster_name")
 
 @pytest.fixture
 def build_and_apply(request):

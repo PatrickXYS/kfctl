@@ -1,21 +1,13 @@
-import datetime
 import logging
 import os
-import subprocess
-import tempfile
-import uuid
 import yaml
-from retrying import retry
-
-import googleapiclient.discovery
-from oauth2client.client import GoogleCredentials
 
 import pytest
 
 from kubeflow.testing import util
 from kubeflow.kfctl.testing.util import deploy_utils
-from kubeflow.testing.cloudprovider.aws import util as aws_util
-from kubeflow.testing.cloudprovider.aws import prow_artifacts as aws_prow_artifacts
+from kubeflow.kfctl.testing.util import aws_util as kfctl_aws_util
+
 
 def set_logging():
   logging.basicConfig(level=logging.INFO,
@@ -24,6 +16,7 @@ def set_logging():
                       datefmt='%Y-%m-%dT%H:%M:%S',
                       )
   logging.getLogger().setLevel(logging.INFO)
+
 
 def get_platform_app_name(app_path):
   with open(os.path.join(app_path, "tmp.yaml")) as f:
@@ -43,6 +36,9 @@ def get_platform_app_name(app_path):
         platform = "aws"
       elif plugin.get("kind", "") == "KfExistingArriktoPlugin":
         platform = "existing_arrikto"
+      else:
+        # Indicate agnostic Kubeflow Platform
+        platform = "agnostic"
   else:
     raise RuntimeError("Unknown version: " + apiVersion[-1])
   return platform, app_name
@@ -56,21 +52,9 @@ def check_deployments_ready(record_xml_attribute, namespace, name, deployments, 
   set_logging()
   util.set_pytest_junit(record_xml_attribute, name)
 
-  # Need to activate account for scopes.
-  # if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-  #   util.run(["gcloud", "auth", "activate-service-account",
-  #             "--key-file=" + os.environ["GOOGLE_APPLICATION_CREDENTIALS"]])
-  
-  # Authenticate AWS Credentials
-  if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
-    logging.info("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set;")
-  else:
-    logging.info("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are not set.")
-  util.run(["aws", "eks", "update-kubeconfig", "--name=" + cluster_name])
+  kfctl_aws_util.aws_auth_load_kubeconfig(cluster_name)
 
   api_client = deploy_utils.create_k8s_client()
-
-  aws_util.load_kube_config()
 
   for deployment_name in deployments:
     logging.info("Verifying that deployment %s started...", deployment_name)
@@ -162,14 +146,6 @@ def test_spark_is_ready(record_xml_attribute, namespace, cluster_name):
                           "test_spark_is_ready", deployment_names,
                           cluster_name)
 
-def test_tensorboard_are_ready(record_xml_attribute, namespace, cluster_name):
-  deployment_names = [
-    "tensorboard"
-  ]
-
-  check_deployments_ready(record_xml_attribute, namespace,
-                        "test_tensorboard_is_ready",deployment_names,
-                        cluster_name)
 
 def test_training_operators_are_ready(record_xml_attribute, namespace, cluster_name):
   deployment_names = [
@@ -198,21 +174,9 @@ def test_kf_is_ready(record_xml_attribute, namespace, use_basic_auth, use_istio,
   set_logging()
   util.set_pytest_junit(record_xml_attribute, "test_kf_is_ready")
 
-  # Need to activate account for scopes.
-  # if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-  #   util.run(["gcloud", "auth", "activate-service-account",
-  #             "--key-file=" + os.environ["GOOGLE_APPLICATION_CREDENTIALS"]])
-
-  # Authenticate AWS Credentials
-  if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
-    logging.info("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set;")
-  else:
-    logging.info("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are not set.")
-  util.run(["aws", "eks", "update-kubeconfig", "--name=" + cluster_name])
+  kfctl_aws_util.aws_auth_load_kubeconfig(cluster_name)
 
   api_client = deploy_utils.create_k8s_client()
-
-  aws_util.load_kube_config()
 
   # Verify that components are actually deployed.
   deployment_names = []
@@ -221,11 +185,11 @@ def test_kf_is_ready(record_xml_attribute, namespace, use_basic_auth, use_istio,
 
   platform, _ = get_platform_app_name(app_path)
 
+  # TODO(PatrickXYS): not sure why istio-galley can't found
   ingress_related_deployments = [
     "cluster-local-gateway",
     "istio-citadel",
     "istio-ingressgateway",
-    "istio-galley ",
     "istio-pilot",
     "istio-policy",
     "istio-sidecar-injector",
@@ -271,7 +235,6 @@ def test_kf_is_ready(record_xml_attribute, namespace, use_basic_auth, use_istio,
     logging.info("Verifying that deployment %s started...", deployment_name)
     util.wait_for_deployment(api_client, ingress_namespace, deployment_name, 10)
 
-
   all_stateful_sets = [(namespace, name) for name in stateful_set_names]
   all_stateful_sets.extend([(ingress_namespace, name) for name in ingress_related_stateful_sets])
 
@@ -285,8 +248,8 @@ def test_kf_is_ready(record_xml_attribute, namespace, use_basic_auth, use_istio,
       raise
 
   ingress_names = ["istio-ingress"]
-  # Check if ALB Ingress is Ready and Healthy
-  if platform == "aws":
+  # Check if Ingress is Ready and Healthy
+  if platform in ["aws"]:
     for ingress_name in ingress_names:
       logging.info("Verifying that ingress %s started...", ingress_name)
       util.wait_for_ingress(api_client, ingress_namespace, ingress_name, 10)

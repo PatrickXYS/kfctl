@@ -1,5 +1,6 @@
 import logging
 import pytest
+import os
 
 from kubeflow.kfctl.testing.util import kfctl_go_test_utils as kfctl_util
 from kubeflow.testing import util
@@ -24,9 +25,7 @@ def test_build_kfctl_go(record_xml_attribute, app_name, app_path, project, use_b
     self_signed_cert: whether to use self-signed cert for ingress.
     values: Comma separated list of variables to substitute into config_path
   """
-  util.set_pytest_junit(record_xml_attribute, "test_build_kfctl_go")
-
-  logging.info("using kfctl repo: %s" % kfctl_repo_path)
+  util.set_pytest_junit(record_xml_attribute, "test_deploy_kubeflow")
 
   if values:
     pairs = values.split(",")
@@ -38,7 +37,12 @@ def test_build_kfctl_go(record_xml_attribute, app_name, app_path, project, use_b
     config_path = config_path.format(**path_vars)
     logging.info("config_path after substitution: %s", config_path)
 
-  kfctl_path = kfctl_util.build_kfctl_go(kfctl_repo_path)
+    kfctl_path = os.path.join(kfctl_repo_path, "bin", "kfctl")
+    app_path = kfctl_util.kfctl_deploy_kubeflow(
+                  app_path, project, use_basic_auth,
+                  use_istio, config_path, kfctl_path,
+                  build_and_apply, cluster_name)
+    logging.info("kubeflow app path: %s", app_path)
 
 
 if __name__ == "__main__":

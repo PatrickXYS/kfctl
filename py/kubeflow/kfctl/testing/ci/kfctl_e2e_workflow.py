@@ -42,7 +42,6 @@ export REPO_NAME=kubeflow
 export PULL_NUMBER=4148
 """
 
-import datetime
 from kubeflow.testing import argo_build_util
 from kubeflow.testing import util
 import logging
@@ -74,7 +73,7 @@ DEFAULT_REPOS = [
 class Builder(object):
   def __init__(self, name=None, namespace="kubeflow-test-infra",
                config_path=("https://raw.githubusercontent.com/kubeflow"
-                            "/manifests/master/kfdef/kfctl_aws.yaml"),
+                            "/manifests/master/kfdef/kfctl_istio_dex.v1.1.0.yaml"),
                bucket="aws-kubernetes-jenkins",
                test_endpoint=False,
                use_basic_auth=False,
@@ -463,43 +462,24 @@ class Builder(object):
     """Build the exit handler dag"""
     task_template = self._build_task_template()
 
-    #***********************************************************************
-    # Delete Kubeflow
-    step_name = "kfctl-delete-wrong-host"
+    step_name = "cluster-delete"
     command = [
         "pytest",
-        "kfctl_delete_wrong_cluster.py",
-        "-s",
-        "--log-cli-level=info",
-        "--timeout=1000",
-        "--junitxml=" + self.artifacts_dir + "/junit_kfctl-go-delete-wrong-cluster-test.xml",
-        "--app_path=" + self.app_dir,
-        "--kfctl_path=" + self.kfctl_path,
-      ]
-
-    kfctl_delete_wrong_cluster = self._build_step(step_name, self.workflow, EXIT_DAG_NAME,
-                                                  task_template,
-                                                  command, [])
-    kfctl_delete_wrong_cluster["container"]["workingDir"] = self.kfctl_pytest_dir
-
-    step_name = "kfctl-delete"
-    command = [
-        "pytest",
-        "kfctl_delete_test.py",
+        "kfctl_delete_cluster_test.py",
         "-s",
         "--log-cli-level=info",
         "--timeout=1000",
         "--junitxml=" + self.artifacts_dir + "/junit_kfctl-go-delete-test.xml",
         "--app_path=" + self.app_dir,
         "--kfctl_path=" + self.kfctl_path,
-        "--cluster_deletion_script=" + "/usr/local/bin/delete-eks-cluster.sh", 
+        "--cluster_deletion_script=" + "/usr/local/bin/delete-eks-cluster.sh",
         "--cluster_name=" + self.cluster_name,
       ]
 
-    kfctl_delete = self._build_step(step_name, self.workflow, EXIT_DAG_NAME,
+    cluster_delete = self._build_step(step_name, self.workflow, EXIT_DAG_NAME,
                                     task_template,
-                                    command, ["kfctl-delete-wrong-host"])
-    kfctl_delete["container"]["workingDir"] = self.kfctl_pytest_dir
+                                    command, [])
+    cluster_delete["container"]["workingDir"] = self.kfctl_pytest_dir
 
     step_name = "copy-artifacts"
     command = ["python",
@@ -508,9 +488,10 @@ class Builder(object):
                "--artifacts_dir=" +
                self.output_dir,
                "copy_artifacts_to_s3",
-               "--bucket=" + self.bucket,]
+               "--bucket=" + self.bucket,
+               ]
 
-    dependences = [kfctl_delete["name"]]
+    dependences = [cluster_delete["name"]]
     copy_artifacts = self._build_step(step_name, self.workflow, EXIT_DAG_NAME, task_template,
                                       command, dependences)
 
@@ -577,8 +558,24 @@ class Builder(object):
       self.kfctl_pytest_dir)
     py3_template["container"]["workingDir"] = os.path.join(self.kfctl_pytest_dir)
 
+    #***************************************************************************
+    # create_pr_symlink
+    #***************************************************************************
+    # TODO(jlewi): run_e2e_workflow.py should probably create the PR symlink
+    step_name = "create-pr-symlink"
+    command = ["python",
+               "-m",
+               "kubeflow.testing.cloudprovider.aws.prow_artifacts",
+               "--artifacts_dir=" + self.output_dir,
+               "create_pr_symlink_s3",
+               "--bucket=" + self.bucket]
+
+    dependences = [checkout["name"]]
+    symlink = self._build_step(step_name, self.workflow, E2E_DAG_NAME, task_template,
+                               command, dependences)
+
     #**************************************************************************
-    # Run build_kfctl and deploy kubeflow
+    # Run build_kfctl
 
     step_name = "kfctl-build-deploy"
     command = [
@@ -588,6 +585,9 @@ class Builder(object):
         # Failures still appear to be captured and stored in the junit file.
         "-s",
         "--app_name=" + self.app_name,
+        "--cluster_name=" + self.cluster_name,
+        # Embedded Script in the ECR Image
+        "--cluster_creation_script=" + "/usr/local/bin/create-eks-cluster.sh",
         "--config_path=" + self.config_path,
         "--values=" + self.values_str,
         "--build_and_apply=" + str(self.build_and_apply),
@@ -599,20 +599,84 @@ class Builder(object):
         "--junitxml=" + self.artifacts_dir + "/junit_kfctl-build-test"
         + self.config_name + ".xml",
         # TODO(jlewi) Test suite name needs to be unique based on parameters.
-        #
         "-o", "junit_suite_name=test_kfctl_go_deploy_" + self.config_name,
         "--app_path=" + self.app_dir,
         "--kfctl_repo_path=" + self.src_dir,
-        "--cluster_name=" + self.cluster_name,
-        # Embedded Script in the ECR Image
-
-        "--cluster_creation_script=" + "/usr/local/bin/create-eks-cluster.sh",
         "--self_signed_cert=false",
     ]
 
     dependences = [checkout["name"]]
     build_kfctl = self._build_step(step_name, self.workflow, E2E_DAG_NAME,
                                    py3_template, command, dependences)
+
+    #**************************************************************************
+    # Create EKS cluster for E2E test
+    step_name = "kfctl-create-cluster"
+    command = [
+        "pytest",
+        "kfctl_create_cluster_test.py",
+        # I think -s mean stdout/stderr will print out to aid in debugging.
+        # Failures still appear to be captured and stored in the junit file.
+        "-s",
+        "--app_name=" + self.app_name,
+        "--cluster_name=" + self.cluster_name,
+        # Embedded Script in the ECR Image
+        "--cluster_creation_script=" + "/usr/local/bin/create-eks-cluster.sh",
+        "--config_path=" + self.config_path,
+        "--values=" + self.values_str,
+        "--build_and_apply=" + str(self.build_and_apply),
+        # Increase the log level so that info level log statements show up.
+        # TODO(https://github.com/kubeflow/testing/issues/372): If we
+        # set a unique artifacts dir for each workflow with the proper
+        # prefix that should work.
+        "--log-cli-level=info",
+        "--junitxml=" + self.artifacts_dir + "/junit_kfctl-build-test"
+        + self.config_name + ".xml",
+        # TODO(jlewi) Test suite name needs to be unique based on parameters.
+        "-o", "junit_suite_name=test_kfctl_go_deploy_" + self.config_name,
+        "--app_path=" + self.app_dir,
+        "--kfctl_repo_path=" + self.src_dir,
+        "--self_signed_cert=false",
+    ]
+
+    dependences = [checkout["name"]]
+    create_cluster = self._build_step(step_name, self.workflow, E2E_DAG_NAME,
+                                   py3_template, command, dependences)
+
+    #**************************************************************************
+    # Deploy Kubeflow
+    step_name = "kfctl-deploy-kubeflow"
+    command = [
+        "pytest",
+        "kfctl_deploy_kubeflow_test.py",
+        # I think -s mean stdout/stderr will print out to aid in debugging.
+        # Failures still appear to be captured and stored in the junit file.
+        "-s",
+        "--app_name=" + self.app_name,
+        "--cluster_name=" + self.cluster_name,
+        # Embedded Script in the ECR Image
+        "--cluster_creation_script=" + "/usr/local/bin/create-eks-cluster.sh",
+        "--config_path=" + self.config_path,
+        "--values=" + self.values_str,
+        "--build_and_apply=" + str(self.build_and_apply),
+        # Increase the log level so that info level log statements show up.
+        # TODO(https://github.com/kubeflow/testing/issues/372): If we
+        # set a unique artifacts dir for each workflow with the proper
+        # prefix that should work.
+        "--log-cli-level=info",
+        "--junitxml=" + self.artifacts_dir + "/junit_kfctl-build-test"
+        + self.config_name + ".xml",
+        # TODO(jlewi) Test suite name needs to be unique based on parameters.
+        "-o", "junit_suite_name=test_kfctl_go_deploy_" + self.config_name,
+        "--app_path=" + self.app_dir,
+        "--kfctl_repo_path=" + self.src_dir,
+        "--self_signed_cert=false",
+    ]
+
+    dependences = [build_kfctl["name"], create_cluster["name"], symlink["name"]]
+    deploy_kf = self._build_step(step_name, self.workflow, E2E_DAG_NAME,
+                                   py3_template, command, dependences)
+
 
     #**************************************************************************
     # Wait for Kubeflow to be ready
@@ -642,84 +706,61 @@ class Builder(object):
            "--namespace=" + default_namespace,
          ]
 
-    dependences = [build_kfctl["name"]]
+    dependences = [deploy_kf["name"]]
     kf_is_ready = self._build_step(step_name, self.workflow, E2E_DAG_NAME, task_template,
                                    command, dependences)
 
+    # self._build_tests_dag()
 
-    #**************************************************************************
-    # Wait for endpoint to be ready
-    if self.test_endpoint:
-      self._test_endpoint_step_name = "endpoint-is-ready"
-      command = ["pytest",
-                 "endpoint_ready_test.py",
-                 # I think -s mean stdout/stderr will print out to aid in debugging.
-                 # Failures still appear to be captured and stored in the junit file.
-                 "-s",
-                 # Increase the log level so that info level log statements show up.
-                 "--log-cli-level=info",
-                 "--junitxml=" + self.artifacts_dir + "/junit_endpoint-is-ready-test-" + self.config_name + ".xml",
-                 # Test suite name needs to be unique based on parameters
-                 "-o", "junit_suite_name=test_endpoint_is_ready_" + self.config_name,
-                 "--app_path=" + self.app_dir,
-                 "--app_name=" + self.app_name,
-                 "--use_basic_auth={0}".format(self.use_basic_auth),
-              ]
-
-      dependencies = [build_kfctl["name"]]
-      endpoint_ready = self._build_step(self._test_endpoint_step_name,
-                                        self.workflow, E2E_DAG_NAME, py3_template,
-                                        command, dependencies)
-      self._test_endpoint_template_name = endpoint_ready["name"]
-
-    #**************************************************************************
-    # Do kfctl apply again. This test will be skip if it's presubmit.
-    step_name = "kfctl-second-apply"
+    #***********************************************************************
+    # Delete Kubeflow
+    # Putting Delete Kubeflow here is deletion functionality should be tested out of exit DAG
+    step_name = "kfctl-delete-wrong-host"
     command = [
-           "pytest",
-           "kfctl_second_apply.py",
-           # I think -s mean stdout/stderr will print out to aid in debugging.
-           # Failures still appear to be captured and stored in the junit file.
-           "-s",
-           "--log-cli-level=info",
-           "--junitxml=" + os.path.join(self.artifacts_dir,
-                                        "junit_kfctl-second-apply-test-" +
-                                        self.config_name + ".xml"),
-           # Test suite name needs to be unique based on parameters
-           "-o", "junit_suite_name=test_kfctl_second_apply_" + self.config_name,
-           "--app_path=" + self.app_dir,
-           "--kfctl_path=" + self.kfctl_path,
-         ]
+        "pytest",
+        "kfctl_delete_wrong_cluster.py",
+        "-s",
+        "--log-cli-level=info",
+        "--timeout=1000",
+        "--junitxml=" + self.artifacts_dir + "/junit_kfctl-go-delete-wrong-cluster-test.xml",
+        "--app_path=" + self.app_dir,
+        "--kfctl_path=" + self.kfctl_path,
+        "--cluster_name=" + self.cluster_name,
+      ]
+
     dependences = [kf_is_ready["name"]]
+    kfctl_delete_wrong_cluster = self._build_step(step_name, self.workflow, E2E_DAG_NAME,
+                                                  task_template,
+                                                  command, dependences)
+    kfctl_delete_wrong_cluster["container"]["workingDir"] = self.kfctl_pytest_dir
 
-    kf_second_apply = self._build_step(step_name, self.workflow, E2E_DAG_NAME, task_template,
-                                       command, dependences)
+    step_name = "kfctl-delete"
+    command = [
+        "pytest",
+        "kfctl_delete_test.py",
+        "-s",
+        "--log-cli-level=info",
+        "--timeout=1000",
+        "--junitxml=" + self.artifacts_dir + "/junit_kfctl-go-delete-test.xml",
+        "--app_path=" + self.app_dir,
+        "--kfctl_path=" + self.kfctl_path,
+        "--cluster_deletion_script=" + "/usr/local/bin/delete-eks-cluster.sh",
+        "--cluster_name=" + self.cluster_name,
+      ]
 
-    self._build_tests_dag()
+    kfctl_delete = self._build_step(step_name, self.workflow, E2E_DAG_NAME,
+                                    task_template,
+                                    command, ["kfctl-delete-wrong-host"])
+    kfctl_delete["container"]["workingDir"] = self.kfctl_pytest_dir
 
     # Add a task to run the dag
-    dependencies = [kf_is_ready["name"]]
+    dependencies = [kfctl_delete["name"]]
     self._run_tests_step_name = TESTS_DAG_NAME
     run_tests_template_name = TESTS_DAG_NAME
     argo_build_util.add_task_only_to_dag(self.workflow, E2E_DAG_NAME, self._run_tests_step_name,
                                          run_tests_template_name,
                                          dependencies)
 
-    #***************************************************************************
-    # create_pr_symlink
-    #***************************************************************************
-    # TODO(jlewi): run_e2e_workflow.py should probably create the PR symlink
-    step_name = "create-pr-symlink"
-    command = ["python",
-               "-m",
-               "kubeflow.testing.cloudprovider.aws.prow_artifacts",
-               "--artifacts_dir=" + self.output_dir,
-               "create_pr_symlink_s3",
-               "--bucket=" + self.bucket]
-
-    dependences = [checkout["name"]]
-    symlink = self._build_step(step_name, self.workflow, E2E_DAG_NAME, task_template,
-                               command, dependences)
 
     #***************************************************************************
     # Exit DAG

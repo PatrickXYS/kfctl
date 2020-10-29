@@ -3,24 +3,18 @@ is wrong.
 
 We use this in order to generate a junit_xml file.
 """
-import datetime
 import logging
 import os
 import subprocess
-import tempfile
-import uuid
 import yaml
-
 from retrying import retry
-
 import pytest
-
 from kubeflow.testing import util
-from googleapiclient import discovery
-from oauth2client.client import GoogleCredentials
+from kubeflow.kfctl.testing.util import aws_util as kfctl_aws_util
+
 
 def test_kfctl_delete_wrong_cluster(record_xml_attribute, kfctl_path, app_path, project,
-                                    cluster_deletion_script):
+                                    cluster_deletion_script, cluster_name):
   util.set_pytest_junit(record_xml_attribute, "test_kfctl_delete_wrong_cluster")
   if not kfctl_path:
     raise ValueError("kfctl_path is required")
@@ -40,6 +34,8 @@ def test_kfctl_delete_wrong_cluster(record_xml_attribute, kfctl_path, app_path, 
   cluster = kfdef.get("metadata", {}).get("clusterName", "")[:]
   if not cluster:
     raise ValueError("cluster is not written to kfdef")
+
+  kfctl_aws_util.aws_auth_load_kubeconfig(cluster_name)
 
   @retry(stop_max_delay=60*3*1000)
   def run_delete():
