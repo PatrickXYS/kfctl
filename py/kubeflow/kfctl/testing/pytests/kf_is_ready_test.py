@@ -43,6 +43,7 @@ def get_platform_app_name(app_path):
     raise RuntimeError("Unknown version: " + apiVersion[-1])
   return platform, app_name
 
+
 def check_deployments_ready(record_xml_attribute, namespace, name, deployments, cluster_name):
   """Test that Kubeflow deployments are successfully deployed.
 
@@ -60,6 +61,7 @@ def check_deployments_ready(record_xml_attribute, namespace, name, deployments, 
     logging.info("Verifying that deployment %s started...", deployment_name)
     util.wait_for_deployment(api_client, namespace, deployment_name, 10)
 
+
 def test_admission_is_ready(record_xml_attribute, namespace, cluster_name):
   deployment_names = [
     "admission-webhook-deployment"
@@ -67,6 +69,7 @@ def test_admission_is_ready(record_xml_attribute, namespace, cluster_name):
   check_deployments_ready(record_xml_attribute, namespace,
                           "test_admission_is_ready", deployment_names,
                           cluster_name)
+
 
 def test_katib_is_ready(record_xml_attribute, namespace, cluster_name):
   deployment_names = [
@@ -78,6 +81,7 @@ def test_katib_is_ready(record_xml_attribute, namespace, cluster_name):
   check_deployments_ready(record_xml_attribute, namespace,
                           "test_katib_is_ready", deployment_names,
                           cluster_name)
+
 
 def test_metadata_is_ready(record_xml_attribute, namespace, cluster_name):
   deployment_names = [
@@ -91,6 +95,7 @@ def test_metadata_is_ready(record_xml_attribute, namespace, cluster_name):
   check_deployments_ready(record_xml_attribute, namespace,
                           "test_metadata_is_ready", deployment_names,
                           cluster_name)
+
 
 def test_pipeline_is_ready(record_xml_attribute, namespace, cluster_name):
   deployment_names = [
@@ -111,6 +116,7 @@ def test_pipeline_is_ready(record_xml_attribute, namespace, cluster_name):
                           "test_pipeline_is_ready", deployment_names,
                           cluster_name)
 
+
 def test_notebook_is_ready(record_xml_attribute, namespace, cluster_name):
   deployment_names = [
     "jupyter-web-app-deployment",
@@ -120,15 +126,18 @@ def test_notebook_is_ready(record_xml_attribute, namespace, cluster_name):
                           "test_notebook_is_ready", deployment_names,
                           cluster_name)
 
+
 def test_centraldashboard_is_ready(record_xml_attribute, namespace, cluster_name):
   check_deployments_ready(record_xml_attribute, namespace,
                           "test_centraldashboard_is_ready",["centraldashboard"],
                           cluster_name)
 
+
 def test_profiles_is_ready(record_xml_attribute, namespace, cluster_name):
   check_deployments_ready(record_xml_attribute, namespace,
                           "test_profile_is_ready",["profiles-deployment"],
                           cluster_name)
+
 
 def test_seldon_is_ready(record_xml_attribute, namespace, cluster_name):
   deployment_names = [
@@ -137,6 +146,7 @@ def test_seldon_is_ready(record_xml_attribute, namespace, cluster_name):
   check_deployments_ready(record_xml_attribute, namespace,
                           "test_seldon_is_ready", deployment_names,
                           cluster_name)
+
 
 def test_spark_is_ready(record_xml_attribute, namespace, cluster_name):
   deployment_names = [
@@ -159,12 +169,14 @@ def test_training_operators_are_ready(record_xml_attribute, namespace, cluster_n
                         "test_training_is_ready",deployment_names,
                         cluster_name)
 
+
 def test_workflow_controller_is_ready(record_xml_attribute, namespace, cluster_name):
   check_deployments_ready(record_xml_attribute, namespace,
                           "test_workflow_controller_is_ready",["workflow-controller"],
                           cluster_name)
 
-def test_kf_is_ready(record_xml_attribute, namespace, use_basic_auth, use_istio,
+
+def test_kf_is_ready(record_xml_attribute, namespace, use_basic_auth,
                      app_path, cluster_name):
   """Test that Kubeflow was successfully deployed.
 

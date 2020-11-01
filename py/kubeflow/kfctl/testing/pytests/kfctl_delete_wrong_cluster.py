@@ -13,8 +13,8 @@ from kubeflow.testing import util
 from kubeflow.kfctl.testing.util import aws_util as kfctl_aws_util
 
 
-def test_kfctl_delete_wrong_cluster(record_xml_attribute, kfctl_path, app_path, project,
-                                    cluster_deletion_script, cluster_name):
+def test_kfctl_delete_wrong_cluster(record_xml_attribute, kfctl_path, app_path,
+                                     cluster_name):
   util.set_pytest_junit(record_xml_attribute, "test_kfctl_delete_wrong_cluster")
   if not kfctl_path:
     raise ValueError("kfctl_path is required")
@@ -59,6 +59,7 @@ def test_kfctl_delete_wrong_cluster(record_xml_attribute, kfctl_path, app_path, 
         yaml.dump(kfdef, f)
 
   run_delete()
+
 
 if __name__ == "__main__":
   logging.basicConfig(level=logging.INFO,

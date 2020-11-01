@@ -10,7 +10,7 @@ from kubeflow.kfctl.testing.util import aws_util as kfctl_aws_util
 
 @pytest.mark.xfail(reason=("See: https://github.com/kubeflow/kfctl/issues/199; "
                            "test is flaky."))
-def test_deploy_pytorchjob(record_xml_attribute, kfctl_repo_path, namespace, cluster_name):
+def test_deploy_pytorchjob(kfctl_repo_path, namespace, cluster_name):
   """Deploy PytorchJob."""
   kfctl_aws_util.aws_auth_load_kubeconfig(cluster_name)
   logging.info("using kfctl repo: %s" % kfctl_repo_path)

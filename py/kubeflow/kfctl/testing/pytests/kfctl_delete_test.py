@@ -14,8 +14,8 @@ from kubeflow.kfctl.testing.util import aws_util as kfctl_aws_util
 # and more importantly failures block upload of GCS artifacts so for now we mark
 # it as expected to fail.
 @pytest.mark.xfail
-def test_kfctl_delete(record_xml_attribute, kfctl_path, app_path, project,
-                      cluster_deletion_script, cluster_name):
+def test_kfctl_delete(record_xml_attribute, kfctl_path, app_path,
+                      cluster_name):
   util.set_pytest_junit(record_xml_attribute, "test_kfctl_delete")
   
   # TODO(PatrickXYS): do we need to load kubeconfig again?
@@ -35,7 +35,7 @@ def test_kfctl_delete(record_xml_attribute, kfctl_path, app_path, project,
   kfctl_aws_util.aws_auth_load_kubeconfig(cluster_name)
 
   # We see failures because delete operation will delete cert-manager and
-  # kfserving, and encounter timeout. To deal with this we do retries.
+  # knative-serving, and encounter timeout. To deal with this we do retries.
   # This has a potential downside of hiding errors that are fixed by retrying.
   @retry(stop_max_delay=60*3*1000)
   def run_delete():

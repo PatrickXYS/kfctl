@@ -211,14 +211,11 @@ def get_config_spec(config_path, app_path, cluster_name):
     logging.info(str(config_spec))
   return config_spec
 
-def kfctl_deploy_kubeflow(app_path, project, use_basic_auth, use_istio, config_path, kfctl_path, build_and_apply, cluster_name):
+def kfctl_deploy_kubeflow(app_path, config_path, kfctl_path, build_and_apply, cluster_name):
   """Deploy kubeflow.
 
   Args:
   app_path: The path to the Kubeflow app.
-  project: The GCP project to use.
-  use_basic_auth: Whether to use basic_auth.
-  use_istio: Whether to use Istio or not
   config_path: Path to the KFDef spec file.
   kfctl_path: Path to the kfctl go binary
   build_and_apply: whether to build and apply or apply
@@ -242,7 +239,6 @@ def kfctl_deploy_kubeflow(app_path, project, use_basic_auth, use_istio, config_p
 
   app_path, parent_dir = get_or_create_app_path_and_parent_dir(app_path)
 
-  # logging.info("Project: %s", project)
   logging.info("app path %s", app_path)
   logging.info("kfctl path %s", kfctl_path)
 
