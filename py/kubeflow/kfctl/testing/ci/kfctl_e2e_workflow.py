@@ -262,13 +262,6 @@ class Builder(object):
            "name": E2E_DAG_NAME,
           },
           {
-           "dag":{
-                 "tasks": [],
-                },
-           "name": TESTS_DAG_NAME,
-
-          },
-          {
             "dag": {
               "tasks": [],
               },
@@ -358,34 +351,10 @@ class Builder(object):
 
     return argo_build_util.add_task_to_dag(workflow, dag_name, step, dependences)
 
-  def _build_tests_dag(self):
+  def _build_tests_dag(self, dependences):
     """Build the dag for the set of tests to run against a KF deployment."""
 
     task_template = self._build_task_template()
-
-    #***************************************************************************
-    # Test TFJob
-    job_name = self.config_name.replace("_", "-").replace(".", "-")
-    step_name = "tfjob-test"
-    command = [
-      "python",
-      "-m",
-      "kubeflow.tf_operator.simple_tfjob_tests",
-      "--app_dir=" + os.path.join(self.tf_operator_root, "test/workflows"),
-      "--tfjob_version=v1",
-      # Name is used for the test case name so it should be unique across
-      # all E2E tests.
-      "--params=name=smoke-tfjob-" + job_name + ",namespace=" +
-      self.steps_namespace,
-      "--artifacts_path=" + self.artifacts_dir,
-      # Skip GPU tests
-      "--skip_tests=test_simple_tfjob_gpu",
-    ]
-
-    dependences = []
-    tfjob_test = self._build_step(step_name, self.workflow, TESTS_DAG_NAME, task_template,
-                                  command, dependences)
-
     #*************************************************************************
     # Test pytorch job
     step_name = "pytorch-job-deploy"
@@ -396,50 +365,12 @@ class Builder(object):
                "--junitxml=" + self.artifacts_dir + "/junit_pytorch-test.xml",
                "--kfctl_repo_path=" + self.src_dir,
                "--namespace=" + self.steps_namespace,
+               "--cluster_name=" + self.cluster_name,
               ]
 
-    dependences = []
-    pytorch_test = self._build_step(step_name, self.workflow, TESTS_DAG_NAME, task_template,
+    pytorch_test = self._build_step(step_name, self.workflow, E2E_DAG_NAME, task_template,
                                     command, dependences)
     pytorch_test["container"]["workingDir"] = self.kfctl_pytest_dir
-    #***************************************************************************
-    # Notebook test
-    step_name = "notebook-test"
-    command =  ["pytest",
-                "jupyter_test.py",
-                "-s",
-                "--timeout=500",
-                "--junitxml=" + self.artifacts_dir + "/junit_jupyter-test.xml",
-                "--kfctl_repo_path=" + self.src_dir,
-                "--namespace=" + self.steps_namespace,
-             ]
-
-    dependences = []
-
-    notebook_test = self._build_step(step_name, self.workflow, TESTS_DAG_NAME, task_template,
-                                     command, dependences)
-    notebook_test["container"]["workingDir"] = self.kfctl_pytest_dir
-
-    #***************************************************************************
-    # Profiles test
-
-    step_name = "profiles-test"
-    command =  ["pytest",
-                "profiles_test.py",
-                # I think -s mean stdout/stderr will print out to aid in debugging.
-                # Failures still appear to be captured and stored in the junit file.
-                "-s",
-                # Test timeout in seconds.
-                "--timeout=600",
-                "--junitxml=" + self.artifacts_dir + "/junit_profiles-test.xml",
-             ]
-
-    dependences = []
-    profiles_test = self._build_step(step_name, self.workflow, TESTS_DAG_NAME, task_template,
-                                     command, dependences)
-
-    profiles_test["container"]["workingDir"] =  os.path.join(
-      self.kubeflow_dir, "py/kubeflow/kubeflow/ci")
 
     # ***************************************************************************
     # kfam test
@@ -450,13 +381,18 @@ class Builder(object):
                "-s",
                "--timeout=600",
                "--junitxml=" + self.artifacts_dir + "/junit_kfam-test.xml",
+               "--cluster_name=" + self.cluster_name,
                ]
 
-    dependences = []
-    kfam_test = self._build_step(step_name, self.workflow, TESTS_DAG_NAME, task_template,
+    kfam_test = self._build_step(step_name, self.workflow, E2E_DAG_NAME, task_template,
                                      command, dependences)
 
     kfam_test["container"]["workingDir"] = self.kfctl_pytest_dir
+
+    test_dependences = [kfam_test["name"], pytorch_test["name"]]
+
+    return test_dependences
+
 
   def _build_exit_dag(self):
     """Build the exit handler dag"""
@@ -521,7 +457,6 @@ class Builder(object):
 
     #**************************************************************************
     # Checkout
-
     # create the checkout step
 
     checkout = argo_build_util.deep_copy(task_template)
@@ -710,7 +645,10 @@ class Builder(object):
     kf_is_ready = self._build_step(step_name, self.workflow, E2E_DAG_NAME, task_template,
                                    command, dependences)
 
-    # self._build_tests_dag()
+    #**************************************************************************
+    # Run functional tests
+    dependences = [kf_is_ready["name"]]
+    dependences = self._build_tests_dag(dependences=dependences)
 
     #***********************************************************************
     # Delete Kubeflow
@@ -728,7 +666,6 @@ class Builder(object):
         "--cluster_name=" + self.cluster_name,
       ]
 
-    dependences = [kf_is_ready["name"]]
     kfctl_delete_wrong_cluster = self._build_step(step_name, self.workflow, E2E_DAG_NAME,
                                                   task_template,
                                                   command, dependences)
@@ -753,15 +690,6 @@ class Builder(object):
                                     command, ["kfctl-delete-wrong-host"])
     kfctl_delete["container"]["workingDir"] = self.kfctl_pytest_dir
 
-    # Add a task to run the dag
-    dependencies = [kfctl_delete["name"]]
-    self._run_tests_step_name = TESTS_DAG_NAME
-    run_tests_template_name = TESTS_DAG_NAME
-    argo_build_util.add_task_only_to_dag(self.workflow, E2E_DAG_NAME, self._run_tests_step_name,
-                                         run_tests_template_name,
-                                         dependencies)
-
-
     #***************************************************************************
     # Exit DAG
     #***************************************************************************
@@ -772,6 +700,7 @@ class Builder(object):
     self.workflow = argo_build_util.set_task_template_labels(self.workflow)
 
     return self.workflow
+
 
 # TODO(jlewi): This is an unnecessary layer of indirection around the builder
 # We should allow py_func in prow_config to point to the builder and
